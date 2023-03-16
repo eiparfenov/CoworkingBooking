@@ -1,0 +1,25 @@
+@page "/reservation/{reservationId}"
+@model CoworkingBooking.Pages.ReservationPageModel
+
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+
+<html>
+@if (Model.Reservation != null)
+{
+    <head>
+        <title>Бронь №@Model.Reservation.Id</title>
+    </head>
+    <body>
+    <div>
+        <p>Студент @Model.Reservation.Student</p>
+        <p>Студент @Model.Reservation.Equipment</p>
+        <p>Студент @Model.Reservation.Date</p>
+        <p>Студент @Model.Reservation.StartTime - @Model.Reservation.EndTime</p>
+    </div>
+    </body>
+}
+</html>

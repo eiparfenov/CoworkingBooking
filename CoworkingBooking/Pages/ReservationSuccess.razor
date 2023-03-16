@@ -1,0 +1,38 @@
+@page "/ReservationSuccess/{ReservationId}"
+@using System.Drawing;
+@using System.IO;
+@using System.Drawing.Imaging
+@using QRCoder
+@inject IConfiguration Configuration
+
+
+<h3>Бронь успешно создана</h3>
+<p>Предъявите это QR code дежурному</p>
+<img src="@QRCodeStr" style="width: 200px; height: 200px"/>
+<p>@Href</p>
+
+@code {
+    [Parameter]
+    public string ReservationId { get; set; }
+
+    public string QRCodeStr { get; set; }
+    public string Href { get; set; }
+
+    protected override void OnInitialized()
+    {
+        using (MemoryStream ms = new MemoryStream())
+        {
+            QRCodeGenerator qrGenerator = new QRCodeGenerator();
+            Href = $"{Configuration.GetValue<string>("host")}/reservation/{ReservationId}";
+            QRCodeData qrCodeData = qrGenerator.CreateQrCode(Href, QRCodeGenerator.ECCLevel.Q);
+            QRCode qrCode = new QRCode(qrCodeData);
+            using (Bitmap qrCodeImage = qrCode.GetGraphic(20))
+            {
+                qrCodeImage.Save(ms, ImageFormat.Png);
+                QRCodeStr = "data:image/png;base64," + Convert.ToBase64String(ms.ToArray());
+            }
+        }
+        
+    }
+
+}

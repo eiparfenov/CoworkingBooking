@@ -1,0 +1,184 @@
+﻿@page "/"
+@using CoworkingBooking.ViewModels
+@using CoworkingBooking.Services
+@using CoworkingBooking.DataObjects
+@inject BookingService BookingService;
+@inject IMessageService MessageService;
+@inject NavigationManager NavigationManager;
+
+<PageTitle>Boooking</PageTitle>
+<div>
+    <p>Выберете оборудование</p>
+    <div>
+        <Select
+            TItem="EquipmentVm"
+            TItemValue="string"
+            ValueName="@nameof(EquipmentVm.Name)"
+            LabelName="@nameof(EquipmentVm.Name)"
+            DataSource="Equipments"
+            OnSelectedItemChanged="vm => { SelectedEquipment = vm; }"
+        >
+        </Select>
+    </div>
+</div>
+@if (SelectedEquipment != null)
+{
+    <div>
+        <p>Выберете время</p>
+        <div>
+            <DatePicker
+                Format="dd/MM/yy"
+                TValue="DateTime?"
+                OnChange="OnDateInput"
+                DisabledDate="time => time < DateTime.Today">
+            
+            </DatePicker>
+        </div>
+    </div>
+}
+@if (EquipmentFreeTime != null)
+{
+    <div>
+        <p>Выберете время</p>
+        <div>
+            <Slider
+                TValue="(double, double)"
+                @bind-Value="@TimeSliderPosition"
+                Min="0"
+                Max="48"
+                Marks="TimeMarks"
+                DefaultValue="(0, 1)"
+                Step="1"
+                TipFormatter="d => TimeFormatter(d)"
+                OnChange="OnTimeSelectionChange"
+            ></Slider>
+        </div>
+        <table style="width: 100%; margin-left: 10px; margin-right: 2px">
+            <tr>
+            @for (int i = 0; i < 48; i++)
+            {
+                if (EquipmentFreeTime.FreeSlots.Any(x => x == i))
+                {
+                    <td style="height: 5px; background: #146c43; border: 3px; border-bottom-color: #191c1f"></td>
+                }
+                else
+                {
+                    <td style="height: 5px; background: #6a1a21; border: 3px; border-bottom-color: #191c1f"></td>
+                }
+            }
+            </tr>
+        </table>
+        @if (!PossibleToBook)
+        {
+            <p>К сожалению, забронировать на это время не возможно. Выбранное Вами оборудование занято и/или в ковркинге не осталось свободных мест.</p>
+        }
+        else
+        {
+            <p>Выбрано время бронирвания с @TimeFormatter(TimeSliderPosition.Item1) до @TimeFormatter(TimeSliderPosition.Item2).</p>
+        }
+        <Button Type="@ButtonType.Primary" OnClick="OnBookingButtonClicked">Забронировать!</Button>
+    </div>
+}
+
+
+@code
+{
+    private static readonly TimeOnly DayStart = TimeOnly.FromTimeSpan(TimeSpan.FromHours(10));
+    public EquipmentVm[]? Equipments { get; set; }
+    public EquipmentVm? SelectedEquipment { get; set; }
+    public DateTime? SelectedDate { get; set; }
+    public EquipmentFreeTimeVm? EquipmentFreeTime { get; set; }
+    public (double, double) TimeSliderPosition { get; set; }
+    public bool PossibleToBook { get; set; }
+
+    private (double, double) _selectedTime = (0, 0);
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        Equipments = await BookingService.GetAllEquipment();
+    }
+
+    private async void OnDateInput(DateTimeChangedEventArgs obj)
+    {
+        SelectedDate = obj.Date;
+        if (SelectedDate == null)
+        {
+            EquipmentFreeTime = null;
+            return;
+        }
+        EquipmentFreeTime = await BookingService.GetEquipmentFreeTime(SelectedEquipment!.Id, DateOnly.FromDateTime(SelectedDate!.Value));
+        TimeSliderPosition = (0, 1);
+        OnTimeSelectionChange((0, 1));
+    }
+
+    private SliderMark[] TimeMarks => _timeMarks ??= Enumerable.Range(0, 49)
+        .Select(x => (x, DayStart.Add(TimeSpan.FromMinutes(x * 10))))
+        .Where(x => _marksPositions.Any(pos => x.Item2 == pos))
+        .Select(tuple => new SliderMark(tuple.x, tuple.Item2.ToString()))
+        .ToArray();
+
+    private SliderMark[]? _timeMarks;
+
+    private readonly TimeOnly[] _marksPositions = new[]
+    {
+        new TimeOnly(10, 00),
+        new TimeOnly(10, 30),
+        new TimeOnly(10, 40),
+        new TimeOnly(12, 10),
+        new TimeOnly(12, 40),
+        new TimeOnly(14, 10),
+        new TimeOnly(14, 20),
+        new TimeOnly(15, 50),
+        new TimeOnly(16, 20),
+        new TimeOnly(17, 50),
+        new TimeOnly(18, 00),
+    };
+    
+    private void OnTimeSelectionChange((double, double) range)
+    {
+        if(_selectedTime.Item1 == range.Item1 && _selectedTime.Item2 == range.Item2) return;
+            
+        var start = Convert.ToInt32(range.Item1);
+        var end = Convert.ToInt32(range.Item2);
+        var possibleToBook = true;
+
+        for (int i = start; i < end; i++)
+        {
+            if (EquipmentFreeTime!.FreeSlots!.All(x => x != i))
+            {
+                possibleToBook = false;
+            }
+        }
+        PossibleToBook = possibleToBook;
+        _selectedTime = range;
+        StateHasChanged();
+    }
+
+    private string TimeFormatter(double value)
+    {
+        if (EquipmentFreeTime != null)
+            return DayStart.Add(TimeSpan.FromMinutes(10 * value)).ToString();
+        return String.Empty;
+    }
+
+    private async void OnBookingButtonClicked()
+    {
+        var reservationId = await BookingService.AddReservation(new AddReservationDto()
+        {
+            StartSlot = Convert.ToInt32(TimeSliderPosition.Item1),
+            EndSlot = Convert.ToInt32(TimeSliderPosition.Item2),
+            Date = DateOnly.FromDateTime(SelectedDate!.Value),
+            EquipmentId = SelectedEquipment!.Id,
+            Student = "Test"
+        });
+        if (reservationId == null)
+        {
+            await MessageService.Error("Что-то пошло не так, повторите попытку позже.");
+        }
+        else
+        {
+            NavigationManager.NavigateTo($"/ReservationSuccess/{reservationId}");
+        }
+    }
+}
